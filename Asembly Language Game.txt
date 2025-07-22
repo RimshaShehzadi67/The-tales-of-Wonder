@@ -1,0 +1,351 @@
+.model small
+.stack 100h
+
+.data
+    ; Game state variables
+    score dw 0
+    coins dw 0
+    lifeline db 0      ; Represented as 0-5 (0=0/5, 1=1/5, ..., 5=5/5)
+    
+    ; Messages
+    welcome_msg db 'Welcome to THE TALES OF WONDER!', 13, 10, '$'
+    level_msg db 'Level $'
+    score_msg db 'Score: $'
+    coins_msg db 'Coins: $'
+    lifeline_msg db 'Lifeline: $'
+    correct_msg db 10, 13, 'Correct! +10 score, +5 coins, +1/5 lifeline', 13, 10, '$'
+    wrong_msg db 10, 13, 'Wrong! -10 score, -5 coins, -1/5 lifeline', 13, 10, '$'
+    question1 db 'What is 3 + 5 * 2? (Remember precedence!)', 13, 10, '$'
+    question2 db 'What is 7 squared? ', 13, 10, '$'
+    question3 db 'What is (10 - 3) * 4?', 13, 10, '$'
+    question4 db 'What is the square root of 64? ', 13, 10, '$'
+    question5 db 'What is 2^3 + 5? ', 13, 10, '$'
+    prompt db 'Your answer (number only): $'
+    congrats_msg db 'Congratulations! You reached the level!', 13, 10, '$'
+    next_level_msg db 'Proceeding to next level...', 13, 10, 13, 10, '$'
+    final_msg db 'Game Over! Final Results:', 13, 10, '$'
+    
+    ; Answer buffers (as strings)
+    answer1 db '13$'
+    answer2 db '49$'
+    answer3 db '28$'
+    answer4 db '8$'
+    answer5 db '13$'
+    
+    ; Input buffer
+    input_buffer db 50 dup('$')  ; Buffer for user input
+    buffer_size db 50          ; Max input size
+    input_length db 0          ; Actual input length
+    
+    ; Number conversion variables
+    temp_num dw 0
+    is_negative db 0
+    
+.code
+main proc
+    mov ax, @data
+    mov ds, ax
+    mov es, ax                
+    
+    ; Display welcome message
+    mov ah, 9
+    lea dx, welcome_msg
+    int 21h
+    
+    ; Add pause here (wait for key press)
+    mov ah, 00h
+    int 16h
+    
+    ; Initialize game state
+    mov score, 0
+    mov coins, 0
+    mov lifeline, 0
+    
+    ; Level 1
+    mov bl, 1
+    call play_level
+    
+    ; Level 2
+    mov bl, 2
+    call play_level
+    
+    ; Level 3
+    mov bl, 3
+    call play_level
+    
+    ; Level 4
+    mov bl, 4
+    call play_level
+    
+    ; Level 5
+    mov bl, 5
+    call play_level
+    
+    ; Game over - show final results
+    call display_final_results
+    
+    ; Exit program
+    mov ah, 4ch
+    int 21h
+main endp
+
+; [Rest of your procedures remain exactly the same]
+; Plays a level (level number in BL)
+play_level proc
+    pusha
+    
+    ; Display level header
+    call display_game_status
+    
+    ; Display level message
+    mov ah, 9
+    lea dx, level_msg
+    int 21h
+    
+    ; Display level number
+    mov dl, bl
+    add dl, '0'
+    mov ah, 2
+    int 21h
+    
+    ; New line
+    mov dl, 13
+    int 21h
+    mov dl, 10
+    int 21h
+    
+    ; Ask the appropriate question based on level
+    cmp bl, 1
+    je ask_q1
+    cmp bl, 2
+    je ask_q2
+    cmp bl, 3
+    je ask_q3
+    cmp bl, 4
+    je ask_q4
+    cmp bl, 5
+    je ask_q5
+    
+ask_q1:
+    lea dx, question1
+    lea si, answer1
+    jmp get_answer
+ask_q2:
+    lea dx, question2
+    lea si, answer2
+    jmp get_answer
+ask_q3:
+    lea dx, question3
+    lea si, answer3
+    jmp get_answer
+ask_q4:
+    lea dx, question4
+    lea si, answer4
+    jmp get_answer
+ask_q5:
+    lea dx, question5
+    lea si, answer5
+    
+get_answer:
+    ; Display question
+    mov ah, 9
+    int 21h
+    
+    ; Display prompt
+    lea dx, prompt
+    int 21h
+    
+    ; Get user input
+    mov ah, 10
+    lea dx, input_buffer
+    int 21h
+    
+    ; Process input - check the input length and terminate it correctly
+    mov al, input_length
+    cbw
+    mov di, ax
+    mov byte ptr input_buffer[di], '$'  ; Properly terminate the string
+    
+    ; Compare with correct answer (SI has correct answer)
+    lea di, input_buffer
+    call strcmp
+    
+    jz correct_answer
+    
+    ; Wrong answer
+    mov ah, 9
+    lea dx, wrong_msg
+    int 21h
+    
+    ; Deduct points
+    sub score, 10
+    sub coins, 5
+    cmp lifeline, 0
+    je no_lifeline_deduct
+    dec lifeline
+no_lifeline_deduct:
+    jmp level_done
+    
+correct_answer:
+    mov ah, 9
+    lea dx, correct_msg
+    int 21h
+    
+    ; Add points
+    add score, 10
+    add coins, 5
+    cmp lifeline, 5
+    je max_lifeline
+    inc lifeline
+max_lifeline:
+    
+level_done:
+    ; Check if player reached target
+    cmp score, 45
+    jl no_congrats
+    cmp coins, 20
+    jl no_congrats
+    cmp lifeline, 4
+    jl no_congrats
+    
+    ; Player reached target
+    mov ah, 09h
+    lea dx, congrats_msg
+    int 21h
+    
+no_congrats:
+    ; Display next level message
+    mov ah, 09h
+    lea dx, next_level_msg
+    int 21h
+    
+    popa
+    ret
+play_level endp
+
+; String comparison (SI=string1, DI=string2)
+; Returns ZF=1 if equal
+strcmp proc
+    pusha
+compare_loop:
+    mov al, [si]
+    mov bl, [di]
+    cmp al, bl
+    jne compare_not_equal
+    test al, al
+    jz compare_equal
+    inc si
+    inc di
+    jmp compare_loop
+    
+compare_not_equal:
+    popa
+    test al, 1  ; Clear ZF
+    ret
+    
+compare_equal:
+    popa
+    xor al, al  ; Set ZF
+    ret
+strcmp endp
+
+; Displays current game status
+display_game_status proc
+    pusha
+    
+    ; Display score
+    mov ah, 9
+    lea dx, score_msg
+    int 21h
+    
+    mov ax, score
+    call print_number
+    
+    ; Display coins
+    lea dx, coins_msg
+    mov ah, 9
+    int 21h
+    
+    mov ax, coins
+    call print_number
+    
+    ; Display lifeline
+    lea dx, lifeline_msg
+    mov ah, 9
+    int 21h
+    
+    mov al, lifeline
+    mov ah, 0
+    call print_number
+    
+    mov ah, 2
+    mov dl, '/'
+    int 21h
+    
+    mov dl, '5'
+    int 21h
+    
+    ; New line
+    mov dl, 13
+    int 21h
+    mov dl, 10
+    int 21h
+    
+    popa
+    ret
+display_game_status endp
+
+; Prints number in AX
+print_number proc
+    pusha
+    
+    ; Handle zero case
+    test ax, ax
+    jnz not_zero
+    mov dl, '0'
+    mov ah, 02h
+    int 21h
+    jmp print_done
+    
+not_zero:
+    ; Convert number to string
+    mov cx, 0
+    mov bx, 10
+    
+div_loop:
+    xor dx, dx
+    div bx
+    push dx
+    inc cx
+    test ax, ax
+    jnz div_loop
+    
+    ; Print digits
+print_loop:
+    pop dx
+    add dl, '0'
+    mov ah, 2
+    int 21h
+    loop print_loop
+    
+print_done:
+    ; Space after number
+    mov dl, ' '
+    mov ah, 2
+    int 21h
+    
+    popa
+    ret
+print_number endp
+
+; Displays final results
+display_final_results proc
+    pusha
+    
+    mov ah, 9
+    lea dx, final_msg
+    int 21h
+    
+    call display_game_status
+    
+    popa
